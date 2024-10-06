@@ -28,6 +28,53 @@ test "Str.initFmt correctly initializes formatted string" {
     try testing.expectEqualStrings(hello.u8, "Hello, composable-string");
 }
 
+test "Str.initEmpty correctly initializes empty string" {
+    const a = testing.allocator;
+
+    var empty = Str.initEmpty(a);
+    try testing.expectEqualStrings(empty.u8, "");
+    empty.deinit();
+
+    var empty2 = Str.initEmpty(a);
+    defer empty2.deinit();
+    try testing.expectEqualStrings(empty2.u8, "");
+    try empty2.concat("not so empty anymore");
+    try testing.expectEqualStrings(empty2.u8, "not so empty anymore");
+}
+
+test "Str.clear correctly removes string content" {
+    const a = testing.allocator;
+
+    var str = try Str.init(a, "content");
+    str.clear();
+    try testing.expectEqualStrings(str.u8, "");
+    str.deinit();
+
+    var str2 = try Str.init(a, "finally");
+    defer str2.deinit();
+    try str2.concat(", more content");
+    str2.clear();
+    try testing.expectEqualStrings("", str2.u8);
+    try testing.expectEqual(str2.u8.len, 0);
+}
+
+test "Str.set should correctly change the content of a string" {
+    const a = testing.allocator;
+
+    var str = try Str.init(a, "content 1");
+    const new_content_literal = "new content";
+    try str.set(new_content_literal);
+    try testing.expectEqualStrings(str.u8, new_content_literal);
+    try testing.expect(str.u8.ptr != new_content_literal.ptr);
+    str.deinit();
+
+    var str2 = try Str.init(a, "content 2");
+    defer str2.deinit();
+    try str2.set("");
+    try testing.expectEqualStrings("", str2.u8);
+    try testing.expectEqual(str2.u8.len, 0);
+}
+
 test "Str.clone using existing allocator" {
     const a = testing.allocator;
 

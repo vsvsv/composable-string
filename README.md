@@ -62,6 +62,10 @@ pub fn main() !void {
 
 - [x] ```Str.init```
 - [x] ```Str.initFmt```
+- [x] ```Str.initEmpty```
+- [x] ```Str.deinit```
+- [x] ```Str.set```
+- [x] ```Str.clear```
 - [x] ```Str.clone```
 - [x] ```Str.concat```
 - [x] ```Str.trim```

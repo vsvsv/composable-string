@@ -30,6 +30,33 @@ pub const Str = struct {
         };
     }
 
+    /// Initializes a new string with an empty buffer.
+    pub fn initEmpty(allocator: std.mem.Allocator) Self {
+        return Self{
+            .u8 = "",
+            .allocator = allocator,
+        };
+    }
+
+    /// Sets the content of this string by copying data from `new_content`.
+    /// Parameter `new_content` can be `Str`, `u8` slice or `u8` literal.
+    pub fn set(self: *Self, new_content: anytype) !void {
+        const content_buf = StringUtils.getCharBuffer(new_content);
+        if (content_buf.len > self.u8.len) {
+            self.u8 = try self.allocator.realloc(self.u8, content_buf.len);
+        } else if (content_buf.len < self.u8.len) {
+            self.shrinkDown(content_buf.len);
+        }
+        if (content_buf.len > 0) {
+            @memcpy(self.u8, content_buf);
+        }
+    }
+
+    /// Truncates this string, removing all the contents
+    pub inline fn clear(self: *Self) void {
+        self.shrinkDown(0);
+    }
+
     /// Frees underlying buffer and deallocates data
     pub inline fn deinit(self: Self) void {
         self.allocator.free(self.u8);
