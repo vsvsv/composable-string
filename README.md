@@ -65,8 +65,8 @@ pub fn main() !void {
 - [x] ```Str.clone```
 - [x] ```Str.concat```
 - [x] ```Str.trim```
-- [ ] ```Str.trimStart```
-- [ ] ```Str.trimEnd```
+- [x] ```Str.trimStart```
+- [x] ```Str.trimEnd```
 - [x] ```Str.charCount```
 - [x] ```Str.isValidUTF8```
 - [x] ```Str.iterator```

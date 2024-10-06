@@ -92,6 +92,54 @@ pub const Str = struct {
     }
 
     /// Removes all whitespace and line terminator symbols
+    /// from the beginning of this string
+    pub fn trimStart(self: *Self) void {
+        if (self.u8.len == 0 or !self.isValidUTF8()) return;
+
+        var start_byte_offset: usize = 0;
+
+        var it = self.iteratorUnchecked();
+        find_start: while (it.nextCodepoint()) |cp| {
+            if (!Codepoint.isWhitespaceOrLineTerminator(cp)) {
+                break :find_start;
+            }
+            start_byte_offset = it.cursor;
+        }
+
+        var new_len: usize = 0;
+        if (it.nextCodepoint() != null) {
+            new_len = self.u8.len - start_byte_offset;
+            if (start_byte_offset != 0) {
+                for (0..new_len) |i| {
+                    self.u8[i] = self.u8[i + start_byte_offset];
+                }
+            }
+        }
+
+        self.shrinkDown(new_len);
+    }
+
+    /// Removes all whitespace and line terminator symbols
+    /// from the end of this string
+    pub fn trimEnd(self: *Self) void {
+        if (self.u8.len == 0 or !self.isValidUTF8()) return;
+
+        var end_byte_offset: usize = self.u8.len;
+
+        var it = self.iteratorUnchecked();
+        it.seekEnd();
+        find_end: while (it.prevCodepoint()) |cp| {
+            if (!Codepoint.isWhitespaceOrLineTerminator(cp)) {
+                break :find_end;
+            }
+            end_byte_offset = it.cursor;
+        }
+
+        const new_len = @max(0, end_byte_offset);
+        self.shrinkDown(new_len);
+    }
+
+    /// Removes all whitespace and line terminator symbols
     /// from both ends of this string
     pub fn trim(self: *Self) void {
         if (self.u8.len == 0 or !self.isValidUTF8()) return;
@@ -108,7 +156,7 @@ pub const Str = struct {
         }
 
         var new_len: usize = 0;
-        if (start_byte_offset != self.u8.len) {
+        if (it.nextCodepoint() != null) { // start position is not at the end of string
             it.seekEnd();
             find_end: while (it.prevCodepoint()) |cp| {
                 if (!Codepoint.isWhitespaceOrLineTerminator(cp)) {
@@ -125,12 +173,7 @@ pub const Str = struct {
             }
         }
 
-        // Because `new_len` is always equal or less that old length,
-        // it is ok to ignore if the resizing fails.
-        // The poiter address will not change, so even after
-        // unsuccessful resize memory will be freed correctly in `deinit()`
-        _ = self.allocator.resize(self.u8, new_len);
-        self.u8 = self.u8[0..new_len];
+        self.shrinkDown(new_len);
     }
 
     /// Returns the number of UTF-8 scalars in this string.
@@ -152,6 +195,17 @@ pub const Str = struct {
             i += cp_len;
         }
         return len;
+    }
+
+    /// (internal) Shrinks internal byte buffer to a new size.
+    /// Caller must guarantee that `new_byte_len <= self.u8.len`, otherwise behaviour is undefined
+    inline fn shrinkDown(self: *Self, new_byte_len: usize) void {
+        // Because `new_byte_len` is always equal or less that old length,
+        // it is ok to ignore if the resizing fails.
+        // The poiter address will not change, so even after
+        // unsuccessful resize memory will be freed correctly in `deinit()`
+        _ = self.allocator.resize(self.u8, new_byte_len);
+        self.u8 = self.u8[0..new_byte_len];
     }
 };
 
