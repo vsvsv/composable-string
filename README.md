@@ -3,8 +3,8 @@ A work-in-progress string library for the Zig programming language
 
 [![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/cooper-org/cooper/tree/master/LICENSE)
 
-> ⚠️  **Note**
-> This library is under active development. Future API changes might break backward compatibility.
+> [!WARNING]
+> This library is a work-in-progress! Future API changes might break backward compatibility. Please use it at your own risk.
 
 ## Goals (a. k. a. Why another one?)
 
