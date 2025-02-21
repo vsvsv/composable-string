@@ -2,6 +2,7 @@ const std = @import("std");
 const Str = @import("composable-string.zig").Str;
 
 pub fn main() !void {
+    std.debug.print("composable-string {}\n\n", .{@import("build_options").lib_version});
     const a = std.heap.c_allocator;
 
     var str = try Str.init(a, "Hello composable-string!");
