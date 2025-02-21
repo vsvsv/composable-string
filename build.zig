@@ -93,7 +93,7 @@ fn getLibraryBuildVersion(b: *std.Build) !std.SemanticVersion {
     var git_hash_str_buf: [1024]u8 = undefined;
     const git_hash_str = blk: {
         var git_hash_command = std.process.Child.init(
-            &[_][]const u8{ "git", "rev-parse", "--short", "HEAD" },
+            &[_][]const u8{ "git", "describe", "--dirty=-custom", "--always" },
             b.allocator,
         );
         git_hash_command.stdout_behavior = .Pipe;
