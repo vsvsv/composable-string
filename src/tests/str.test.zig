@@ -2,6 +2,25 @@ const std = @import("std");
 const testing = std.testing;
 const Str = @import("../composable-string.zig").Str;
 
+const valid_utf8_strings = [_][]const u8{
+    "All your base are belong to us",
+    "\xc3\xb1",
+    "\xe2\x82\xa1",
+    "\xf0\x90\x8c\xbc",
+};
+
+const invalid_utf8_strings = [_][]const u8{
+    "\xc3\x28",
+    "\xa0\xa1",
+    "\xe2\x28\xa1",
+    "\xe2\x82\x28",
+    "\xf0\x28\x8c\xbc",
+    "\xf0\x90\x28\xbc",
+    "\xf0\x28\x8c\x28",
+    "\xf8\xa1\xa1\xa1\xa1",
+    "\xfc\xa1\xa1\xa1\xa1\xa1",
+};
+
 test "Str initializes correctly" {
     const a = testing.allocator;
     const hello_str = "Hello";
@@ -13,10 +32,22 @@ test "Str initializes correctly" {
     try testing.expectEqual(hello.u8.len, hello_str.len);
 }
 
-test "Str correctly passes allocation error on init" {
+test "Str.init correctly passes allocation error on init" {
     const a = testing.failing_allocator;
     const allocError = std.mem.Allocator.Error.OutOfMemory;
     try testing.expectError(allocError, Str.init(a, "Born 2 fail"));
+}
+
+test "Str.init correctly drops error when constructed from invalid UTF-8" {
+    const a = testing.allocator;
+    for (valid_utf8_strings) |test_slice| {
+        var str = try Str.init(a, test_slice);
+        defer str.deinit();
+        try testing.expectEqualStrings(str.u8, test_slice);
+    }
+    for (invalid_utf8_strings) |test_slice| {
+        try testing.expectError(Str.Error.InvalidUtf8, Str.init(a, test_slice));
+    }
 }
 
 test "Str.initFmt correctly initializes formatted string" {
@@ -26,6 +57,19 @@ test "Str.initFmt correctly initializes formatted string" {
     defer hello.deinit();
 
     try testing.expectEqualStrings(hello.u8, "Hello, composable-string");
+}
+
+test "Str.initFmt correctly drops error when constructed from invalid UTF-8" {
+    const a = testing.allocator;
+    for (valid_utf8_strings) |test_slice| {
+        var str = try Str.initFmt(a, "some text {s} some text", .{test_slice});
+        defer str.deinit();
+        try testing.expectFmt(str.u8, "some text {s} some text", .{test_slice});
+    }
+    for (invalid_utf8_strings) |test_slice| {
+        const result = Str.initFmt(a, "some text {s} some text", .{test_slice});
+        try testing.expectError(Str.Error.InvalidUtf8, result);
+    }
 }
 
 test "Str.initEmpty correctly initializes empty string" {
@@ -75,6 +119,21 @@ test "Str.set should correctly change the content of a string" {
     try testing.expectEqual(str2.u8.len, 0);
 }
 
+test "Str.set correctly drops error when input parameter is invalid UTF-8" {
+    const a = testing.allocator;
+    for (valid_utf8_strings) |test_slice| {
+        var str = try Str.init(a, "content");
+        try str.set(test_slice);
+        defer str.deinit();
+        try testing.expectEqualStrings(str.u8, test_slice);
+    }
+    for (invalid_utf8_strings) |test_slice| {
+        var str = try Str.init(a, "content");
+        defer str.deinit();
+        try testing.expectError(Str.Error.InvalidUtf8, str.set(test_slice));
+    }
+}
+
 test "Str.clone using existing allocator" {
     const a = testing.allocator;
 
@@ -110,6 +169,21 @@ test "Str.concat() correctly concatinates strings" {
     defer another_world.deinit();
 
     try testing.expectEqualStrings(another_hello.u8, hello_world_str);
+}
+
+test "Str.concat correctly drops error when input parameter is invalid UTF-8" {
+    const a = testing.allocator;
+    for (valid_utf8_strings) |test_slice| {
+        var str = try Str.init(a, "content");
+        try str.concat(test_slice);
+        defer str.deinit();
+        try testing.expectFmt(str.u8, "content{s}", .{test_slice});
+    }
+    for (invalid_utf8_strings) |test_slice| {
+        var str = try Str.init(a, "content");
+        defer str.deinit();
+        try testing.expectError(Str.Error.InvalidUtf8, str.concat(test_slice));
+    }
 }
 
 test "Str.trimStart should remove all spaces, tabs and line separators from the start of the string" {

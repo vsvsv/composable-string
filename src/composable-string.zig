@@ -1,17 +1,56 @@
 const std = @import("std");
 const unicode = std.unicode;
 
+/// A UTF-8–encoded, growable string.
+///
+/// Example:
+/// ```zig
+///    // Use your favorite allocator
+///    const a = std.heap.c_allocator;
+///
+///    var str = try Str.init(a, "Hello");
+///    defer str.deinit();
+///    try str.concat(", composable-string!");
+///
+///    var another = try Str.initFmt(a, " (this is {s} {s})", .{"concatinated", "Str"});
+///    defer another.deinit();
+///    try str.concat(another);
+///    std.debug.print("'str' is: \"{s}\"\n", .{str.u8});
+/// ```
+///
+/// This struct internally stores a `std.mem.Allocator` for memory management.
+///
+/// All `Str`'s methods enforce valid UTF-8.
+///
+/// Thereby it is not recommended to manually mutate the `u8` field (although it is possible).
+/// When doing any changes to the underlying `u8` field, one should guarantee the UTF-8 validity of
+/// the content.
 pub const Str = struct {
     const Self = @This();
 
-    /// A buffer which contains bytes of UTF-8 encoded text
+    pub const Error = error{
+        /// Indicates that there was an attempt to construct `Str`
+        /// from some input parameter which contains invalid UTF-8 sequence.
+        InvalidUtf8,
+
+        /// Indicates that input parameter is of incorrect type
+        /// and cannot be trivially converted to `Str`.
+        IncorrectParameterType,
+    };
+
+    /// A buffer which contains bytes of UTF-8 encoded text.
+    ///
+    /// When doing any changes, one should guarantee the UTF-8 validity of
+    /// the content in the `u8` buffer.
     u8: []u8,
+    /// Allocator for working with underlying `u8` buffer.
     allocator: std.mem.Allocator,
 
     /// Initializes a new string, cloning the data of `str` using `allocator`.
     /// Parameter `str` can be `Str`, `u8` slice or `u8` literal.
     pub fn init(allocator: std.mem.Allocator, str: anytype) !Self {
-        const src_buf = StringUtils.getCharBuffer(str);
+        const src_buf = StringUtils.getUnderlyingU8Slice(str);
+        try Self.checkValidUTF8(src_buf);
         const buf = try allocator.alloc(u8, src_buf.len);
         @memcpy(buf, src_buf);
         return Self{
@@ -24,6 +63,10 @@ pub const Str = struct {
     /// See ```std.fmt.format()``` for an explanation of `fmt` string format.
     pub fn initFmt(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !Self {
         const buf = try std.fmt.allocPrint(allocator, fmt, args);
+        Self.checkValidUTF8(buf) catch |err| {
+            allocator.free(buf);
+            return err;
+        };
         return Self{
             .u8 = buf,
             .allocator = allocator,
@@ -41,7 +84,8 @@ pub const Str = struct {
     /// Sets the content of this string by copying data from `new_content`.
     /// Parameter `new_content` can be `Str`, `u8` slice or `u8` literal.
     pub fn set(self: *Self, new_content: anytype) !void {
-        const content_buf = StringUtils.getCharBuffer(new_content);
+        const content_buf = StringUtils.getUnderlyingU8Slice(new_content);
+        try Self.checkValidUTF8(content_buf);
         if (content_buf.len > self.u8.len) {
             self.u8 = try self.allocator.realloc(self.u8, content_buf.len);
         } else if (content_buf.len < self.u8.len) {
@@ -75,8 +119,9 @@ pub const Str = struct {
     /// Appends `append_str` to the end of string.
     /// Parameter `append_str` can be `Str`, `u8` slice or `u8` literal.
     pub fn concat(self: *Self, append_str: anytype) !void {
-        const append_buf = StringUtils.getCharBuffer(append_str);
+        const append_buf = StringUtils.getUnderlyingU8Slice(append_str);
         if (append_buf.len == 0) return;
+        try Self.checkValidUTF8(append_buf);
 
         const prev_len = self.u8.len;
         self.u8 = try self.allocator.realloc(self.u8, self.u8.len + append_buf.len);
@@ -85,22 +130,22 @@ pub const Str = struct {
     }
 
     /// Checks if string data has valid UTF-8 encoding
-    pub inline fn isValidUTF8(self: Self) bool {
-        return unicode.wtf8ValidateSlice(self.u8);
+    inline fn checkValidUTF8(str: anytype) !void {
+        const slice = StringUtils.getUnderlyingU8Slice(str);
+        if (!unicode.wtf8ValidateSlice(slice)) {
+            return Str.Error.InvalidUtf8;
+        }
     }
 
     /// Returns an iterator of all UTF-8 code points (runes) in the string.
-    /// Will return an error if the string contains invalid UTF-8 data.
-    /// ```zig
+    /// ```
     /// var iter = try str.iterator();
     /// while (iter.nextCodepointSlice()) |char| {
     ///     std.debug.print("got codepoint '{s}'\n", .{char});
     /// }
     /// ```
     pub fn iterator(self: Self) !StrIterator {
-        if (!self.isValidUTF8()) {
-            return error.InvalidUtf8;
-        }
+        try self.checkValidUTF8();
         return self.iteratorUnchecked();
     }
 
@@ -121,7 +166,10 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from the beginning of this string
     pub fn trimStart(self: *Self) void {
-        if (self.u8.len == 0 or !self.isValidUTF8()) return;
+        if (self.u8.len == 0) return;
+        self.checkValidUTF8() catch {
+            return;
+        };
 
         var start_byte_offset: usize = 0;
 
@@ -149,7 +197,10 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from the end of this string
     pub fn trimEnd(self: *Self) void {
-        if (self.u8.len == 0 or !self.isValidUTF8()) return;
+        if (self.u8.len == 0) return;
+        self.checkValidUTF8() catch {
+            return;
+        };
 
         var end_byte_offset: usize = self.u8.len;
 
@@ -169,7 +220,10 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from both ends of this string
     pub fn trim(self: *Self) void {
-        if (self.u8.len == 0 or !self.isValidUTF8()) return;
+        if (self.u8.len == 0) return;
+        self.checkValidUTF8() catch {
+            return;
+        };
 
         var start_byte_offset: usize = 0;
         var end_byte_offset: usize = self.u8.len;
@@ -316,12 +370,15 @@ test "Str struct tests" {
 }
 
 const StringUtils = struct {
-    pub fn ensureCorrectStringInitializer(str_type: type) void {
-        if (str_type == Str) {
-            return;
+    pub fn checkTypeIsStringLike(str_type: type) bool {
+        if (str_type == Str or str_type == *Str) {
+            return true;
         }
         if (str_type == []const u8) {
-            return;
+            return true;
+        }
+        if (str_type == []u8) {
+            return true;
         }
         const is_pointer_to_literal = comptime blk: {
             const type_info = @typeInfo(str_type);
@@ -338,20 +395,31 @@ const StringUtils = struct {
             break :blk true;
         };
         if (is_pointer_to_literal) {
+            return true;
+        }
+        const error_msg = std.fmt.comptimePrint(
+            "ACHTUNG! type: {s}, type == Str: {}, is_pointer_to_literal: {}\n",
+            .{ @typeName(str_type), str_type == Str, is_pointer_to_literal },
+        );
+        @compileError(error_msg);
+        // return false;
+    }
+    pub fn ensureTypeIsStringLike(str_type: type) void {
+        if (checkTypeIsStringLike(str_type)) {
             return;
         }
         const error_msg = std.fmt.comptimePrint(
-            "Incorrect type of parameter `str`, expected String, u8 slice or u8 literal, got: {s}\n",
+            "Incorrect type. Expected Str, u8 slice or u8 literal, got: {s}\n",
             .{@typeName(str_type)},
         );
         @compileError(error_msg);
     }
-    pub fn getCharBuffer(str: anytype) []const u8 {
-        comptime {
-            ensureCorrectStringInitializer(@TypeOf(str));
-        }
+    pub fn getUnderlyingU8Slice(str: anytype) []const u8 {
         const StrType = @TypeOf(str);
-        if (StrType == Str) {
+        comptime {
+            ensureTypeIsStringLike(StrType);
+        }
+        if (StrType == Str or StrType == *Str) {
             return str.u8;
         }
         return str;
