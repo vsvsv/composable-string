@@ -325,14 +325,14 @@ const StringUtils = struct {
         }
         const is_pointer_to_literal = comptime blk: {
             const type_info = @typeInfo(str_type);
-            if (type_info != .Pointer) {
+            if (type_info != .pointer) {
                 break :blk false;
             }
-            const deref_type_info = @typeInfo(type_info.Pointer.child);
-            if (deref_type_info != .Array) {
+            const deref_type_info = @typeInfo(type_info.pointer.child);
+            if (deref_type_info != .array) {
                 break :blk false;
             }
-            if (deref_type_info.Array.child != u8) {
+            if (deref_type_info.array.child != u8) {
                 break :blk false;
             }
             break :blk true;
