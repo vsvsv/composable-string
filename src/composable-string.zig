@@ -1,5 +1,6 @@
 const std = @import("std");
 const unicode = std.unicode;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
 /// A UTF-8–encoded, growable string.
 ///
@@ -15,15 +16,27 @@ const unicode = std.unicode;
 ///    var another = try Str.initFmt(a, " (this is {s} {s})", .{"concatinated", "Str"});
 ///    defer another.deinit();
 ///    try str.concat(another);
-///    std.debug.print("'str' is: \"{s}\"\n", .{str.u8});
+///    std.debug.print("'str' is: \"{s}\"\n", .{str.asSlice()});
 /// ```
 ///
-/// This struct internally stores a `std.mem.Allocator` for memory management.
+///
+/// # Representation
+///
+/// A `Str` is made up of `std.ArrayListUnmanaged` and an `std.mem.Allocator`.
+/// `Str` is always stored on the heap.
+///
+/// Similarly to `std.ArrayList`, `Str` has a pointer to data (`u8` buffer), length and capacity.
+/// The length is the number of bytes currently stored in the buffer,
+/// and the capacity is the size of the buffer in bytes.
+/// As such, the length will always be less than or equal to the capacity.
+///
+///
+/// # UTF-8
 ///
 /// All `Str`'s methods enforce valid UTF-8.
 ///
-/// Thereby it is not recommended to manually mutate the `u8` field (although it is possible).
-/// When doing any changes to the underlying `u8` field, one should guarantee the UTF-8 validity of
+/// Thereby it is not recommended to manually mutate the `buf` field (although it is possible).
+/// When doing any changes to the underlying `buf` field, one should guarantee the UTF-8 validity of
 /// the content.
 pub const Str = struct {
     const Self = @This();
@@ -38,12 +51,13 @@ pub const Str = struct {
         IncorrectParameterType,
     };
 
-    /// A buffer which contains bytes of UTF-8 encoded text.
+    /// A buffer which contains the bytes of UTF-8 encoded text.
     ///
     /// When doing any changes, one should guarantee the UTF-8 validity of
-    /// the content in the `u8` buffer.
-    u8: []u8,
-    /// Allocator for working with underlying `u8` buffer.
+    /// the content in this buffer.
+    buf: ArrayListUnmanaged(u8),
+
+    /// Allocator for working with underlying byte buffer (`buf`).
     allocator: std.mem.Allocator,
 
     /// Initializes a new string, cloning the data of `str` using `allocator`.
@@ -51,10 +65,12 @@ pub const Str = struct {
     pub fn init(allocator: std.mem.Allocator, str: anytype) !Self {
         const src_buf = StringUtils.getUnderlyingU8Slice(str);
         try Self.checkValidUTF8(src_buf);
-        const buf = try allocator.alloc(u8, src_buf.len);
-        @memcpy(buf, src_buf);
+
+        var buf = try ArrayListUnmanaged(u8).initCapacity(allocator, src_buf.len);
+        buf.appendSliceAssumeCapacity(src_buf);
+
         return Self{
-            .u8 = buf,
+            .buf = buf,
             .allocator = allocator,
         };
     }
@@ -62,56 +78,74 @@ pub const Str = struct {
     /// Initializes a new string with formatted data using `allocator`.
     /// See ```std.fmt.format()``` for an explanation of `fmt` string format.
     pub fn initFmt(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !Self {
-        const buf = try std.fmt.allocPrint(allocator, fmt, args);
-        Self.checkValidUTF8(buf) catch |err| {
-            allocator.free(buf);
+        const char_count = std.fmt.count(fmt, args);
+        var buf = try ArrayListUnmanaged(u8).initCapacity(allocator, char_count);
+        buf.items = try std.fmt.bufPrint(buf.allocatedSlice(), fmt, args);
+
+        Self.checkValidUTF8(buf.items) catch |err| {
+            buf.deinit(allocator);
             return err;
         };
         return Self{
-            .u8 = buf,
+            .buf = buf,
             .allocator = allocator,
         };
     }
 
     /// Initializes a new string with an empty buffer.
     pub fn initEmpty(allocator: std.mem.Allocator) Self {
+        const buf = ArrayListUnmanaged(u8).empty;
         return Self{
-            .u8 = "",
+            .buf = buf,
             .allocator = allocator,
         };
     }
 
+    /// Returns this `Str` capacity, in bytes.
+    /// Capacity is the length of allocated buffer in memory.
+    pub inline fn capacity(self: Self) usize {
+        return self.buf.capacity;
+    }
+
     /// Sets the content of this string by copying data from `new_content`.
     /// Parameter `new_content` can be `Str`, `u8` slice or `u8` literal.
+    ///
+    /// This function changes this `Str`s capacity to `new_content.len` by resizing allocated byte buffer.
     pub fn set(self: *Self, new_content: anytype) !void {
         const content_buf = StringUtils.getUnderlyingU8Slice(new_content);
+        if (content_buf.len == 0) {
+            self.clear();
+            return;
+        }
         try Self.checkValidUTF8(content_buf);
-        if (content_buf.len > self.u8.len) {
-            self.u8 = try self.allocator.realloc(self.u8, content_buf.len);
-        } else if (content_buf.len < self.u8.len) {
-            self.shrinkDown(content_buf.len);
+
+        if (content_buf.len > self.buf.capacity) {
+            try self.buf.ensureTotalCapacityPrecise(self.allocator, content_buf.len);
+        } else if (content_buf.len < self.buf.capacity) {
+            self.buf.shrinkAndFree(self.allocator, content_buf.len);
         }
-        if (content_buf.len > 0) {
-            @memcpy(self.u8, content_buf);
-        }
+        // At this point, `self.buf` capacity should be exactly `content_buf.len`
+        self.buf.items = self.buf.allocatedSlice();
+        @memcpy(self.buf.items, content_buf);
     }
 
-    /// Truncates this string, removing all the contents
+    /// Truncates this string, removing all the contents.
+    /// Also shrinks the allocated buffer, so capacity becomes 0.
     pub inline fn clear(self: *Self) void {
-        self.shrinkDown(0);
+        self.buf.clearAndFree(self.allocator);
     }
 
-    /// Frees underlying buffer and deallocates data
-    pub inline fn deinit(self: Self) void {
-        self.allocator.free(self.u8);
+    /// Free underlying buffer and release all allocated memory
+    pub inline fn deinit(self: *Self) void {
+        self.buf.deinit(self.allocator);
+        self.* = undefined;
     }
 
-    /// Allocates a new string with an exact copy of the contents of this string
+    /// Allocates a new Str with an exact copy of the contents of this string
     pub fn clone(self: Self) !Self {
-        const buf = try self.allocator.alloc(u8, self.u8.len);
-        @memcpy(buf, self.u8);
+        const buf = try self.buf.clone(self.allocator);
         return Self{
-            .u8 = buf,
+            .buf = buf,
             .allocator = self.allocator,
         };
     }
@@ -123,10 +157,7 @@ pub const Str = struct {
         if (append_buf.len == 0) return;
         try Self.checkValidUTF8(append_buf);
 
-        const prev_len = self.u8.len;
-        self.u8 = try self.allocator.realloc(self.u8, self.u8.len + append_buf.len);
-
-        @memcpy(self.u8[prev_len..], append_buf);
+        try self.buf.appendSlice(self.allocator, append_buf);
     }
 
     /// Checks if string data has valid UTF-8 encoding
@@ -144,6 +175,7 @@ pub const Str = struct {
     ///     std.debug.print("got codepoint '{s}'\n", .{char});
     /// }
     /// ```
+    /// Contents of this `Str` should never mutate while using an iterator.
     pub fn iterator(self: Self) !StrIterator {
         try self.checkValidUTF8();
         return self.iteratorUnchecked();
@@ -151,14 +183,14 @@ pub const Str = struct {
 
     /// Returns an iterator of all UTF-8 code points (runes) in the string.
     ///
-    /// **No checks of validity of underlying UTF-8 data will be performed.**
+    /// *No checks of validity of underlying UTF-8 data will be performed.*
     /// Caller must guarantee that current string data is a valid UTF-8 string,
     /// otherwise iterator behaviour is undefined.
     ///
     /// See `Str.iterator()` for an example usage.
     pub inline fn iteratorUnchecked(self: Self) StrIterator {
         return StrIterator{
-            .bytes = self.u8,
+            .bytes = self.buf.items,
             .cursor = 0,
         };
     }
@@ -166,7 +198,7 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from the beginning of this string
     pub fn trimStart(self: *Self) void {
-        if (self.u8.len == 0) return;
+        if (self.byteCount() == 0) return;
         self.checkValidUTF8() catch {
             return;
         };
@@ -183,10 +215,10 @@ pub const Str = struct {
 
         var new_len: usize = 0;
         if (it.nextCodepoint() != null) {
-            new_len = self.u8.len - start_byte_offset;
+            new_len = self.byteCount() - start_byte_offset;
             if (start_byte_offset != 0) {
                 for (0..new_len) |i| {
-                    self.u8[i] = self.u8[i + start_byte_offset];
+                    self.buf.items[i] = self.buf.items[i + start_byte_offset];
                 }
             }
         }
@@ -197,12 +229,12 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from the end of this string
     pub fn trimEnd(self: *Self) void {
-        if (self.u8.len == 0) return;
+        if (self.byteCount() == 0) return;
         self.checkValidUTF8() catch {
             return;
         };
 
-        var end_byte_offset: usize = self.u8.len;
+        var end_byte_offset: usize = self.buf.items.len;
 
         var it = self.iteratorUnchecked();
         it.seekEnd();
@@ -220,13 +252,13 @@ pub const Str = struct {
     /// Removes all whitespace and line terminator symbols
     /// from both ends of this string
     pub fn trim(self: *Self) void {
-        if (self.u8.len == 0) return;
+        if (self.byteCount() == 0) return;
         self.checkValidUTF8() catch {
             return;
         };
 
         var start_byte_offset: usize = 0;
-        var end_byte_offset: usize = self.u8.len;
+        var end_byte_offset: usize = self.byteCount();
 
         var it = self.iteratorUnchecked();
         find_start: while (it.nextCodepoint()) |cp| {
@@ -249,7 +281,7 @@ pub const Str = struct {
             new_len = end_byte_offset - start_byte_offset;
             if (start_byte_offset != 0) {
                 for (0..new_len) |i| {
-                    self.u8[i] = self.u8[i + start_byte_offset];
+                    self.buf.items[i] = self.buf.items[i + start_byte_offset];
                 }
             }
         }
@@ -257,10 +289,26 @@ pub const Str = struct {
         self.shrinkDown(new_len);
     }
 
-    /// Returns the number of UTF-8 scalars in this string.
+    /// Returns the underlying `u8` slice of the string.
+    ///
+    /// Pointers to elements in this slice are invalidated by any
+    /// function which mutate the data of this `Str`.
+    pub inline fn asSlice(self: Self) []const u8 {
+        return self.buf.items;
+    }
+
+    /// Returns the length in bytes of the current string.
+    ///
+    /// For obtaining actual length (i. e. number of characters) in the string,
+    /// `Str.charCount` should be used instead. For non-ASCII strings, one UTF-8 scalar
+    /// may be up to 4 bytes long, so `Str.byteLength` may not correspond with actual character count.
+    pub inline fn byteCount(self: Self) usize {
+        return self.buf.items.len;
+    }
+
+    /// Returns the number of actual characters (UTF-8 scalars) in this string.
     /// One UTF-8 scalar may be up to 4 bytes long, so for non-ASCII strings
-    /// this is preffered way of obtaining actual length of a string
-    /// (instead of `len`, which represents the byte count).
+    /// this is preffered way of obtaining actual length of a string.
     ///
     /// **NOTE** In some languages, one individual visual character may be
     /// constructed using many UTF-8 scalars, combined into a "grapheme cluster".
@@ -270,23 +318,18 @@ pub const Str = struct {
     pub fn charCount(self: Self) usize {
         var len: usize = 0;
         var i: usize = 0;
-        while (i < self.u8.len) {
+        while (i < self.buf.items.len) {
             len += 1;
-            const cp_len = unicode.utf8ByteSequenceLength(self.u8[i]) catch unreachable;
+            const cp_len = unicode.utf8ByteSequenceLength(self.buf.items[i]) catch unreachable;
             i += cp_len;
         }
         return len;
     }
 
     /// (internal) Shrinks internal byte buffer to a new size.
-    /// Caller must guarantee that `new_byte_len <= self.u8.len`, otherwise behaviour is undefined
+    /// Caller must guarantee that `new_byte_len <= self.u8.len`.
     inline fn shrinkDown(self: *Self, new_byte_len: usize) void {
-        // Because `new_byte_len` is always equal or less that old length,
-        // it is ok to ignore if the resizing fails.
-        // The poiter address will not change, so even after
-        // unsuccessful resize memory will be freed correctly in `deinit()`
-        _ = self.allocator.resize(self.u8, new_byte_len);
-        self.u8 = self.u8[0..new_byte_len];
+        self.buf.shrinkAndFree(self.allocator, new_byte_len);
     }
 };
 
@@ -397,12 +440,7 @@ const StringUtils = struct {
         if (is_pointer_to_literal) {
             return true;
         }
-        const error_msg = std.fmt.comptimePrint(
-            "ACHTUNG! type: {s}, type == Str: {}, is_pointer_to_literal: {}\n",
-            .{ @typeName(str_type), str_type == Str, is_pointer_to_literal },
-        );
-        @compileError(error_msg);
-        // return false;
+        return false;
     }
     pub fn ensureTypeIsStringLike(str_type: type) void {
         if (checkTypeIsStringLike(str_type)) {
@@ -420,7 +458,7 @@ const StringUtils = struct {
             ensureTypeIsStringLike(StrType);
         }
         if (StrType == Str or StrType == *Str) {
-            return str.u8;
+            return str.buf.items;
         }
         return str;
     }

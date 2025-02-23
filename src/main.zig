@@ -12,17 +12,17 @@ pub fn main() !void {
     var another = try Str.init(a, " (this is concatenated Str)");
     defer another.deinit();
     try str.concat(another);
-    std.debug.print("'str' is: \"{s}\"\n\n", .{str.u8});
+    std.debug.print("'str' is: \"{s}\"\n\n", .{str.asSlice()});
 
     var str_with_spaces = try Str.initFmt(a, "        A string with {s} \t\n\t\n  ", .{"whitespaces, newlines and tabs"});
     defer str_with_spaces.deinit();
     str_with_spaces.trim();
-    std.debug.print("'str_with_spaces' after trim(): \"{s}\"\n", .{str_with_spaces.u8});
+    std.debug.print("'str_with_spaces' after trim(): \"{s}\"\n", .{str_with_spaces.asSlice()});
 
     var non_ascii = try Str.init(a, "Один, 二, さん"); // character count: 11
     defer non_ascii.deinit();
     std.debug.print(
-        "\nNon-ascii string: \"{s}\", string.u8.len: {}, string.charCount(): {}\n",
-        .{ non_ascii.u8, non_ascii.u8.len, non_ascii.charCount() },
+        "\nNon-ascii string: \"{s}\", string.byteCount(): {}, string.charCount(): {}\n",
+        .{ non_ascii.asSlice(), non_ascii.byteCount(), non_ascii.charCount() },
     );
 }
