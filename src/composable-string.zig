@@ -16,7 +16,7 @@ const ArrayListUnmanaged = std.ArrayListUnmanaged;
 ///    var another = try Str.initFmt(a, " (this is {s} {s})", .{"concatinated", "Str"});
 ///    defer another.deinit();
 ///    try str.concat(another);
-///    std.debug.print("'str' is: \"{s}\"\n", .{str.asSlice()});
+///    std.debug.print("str = \"{s}\"\n", .{ str });
 /// ```
 ///
 ///
@@ -324,6 +324,18 @@ pub const Str = struct {
             i += cp_len;
         }
         return len;
+    }
+
+    /// Implements default formatting for `Str`. Example:
+    /// ```zig
+    /// const str = try Str.init(a, "Hello");
+    /// std.debug.print("str = {s}", .{ str }); // Expected output: "str = Hello"
+    /// ```
+    pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("{s}", .{self.buf.items});
     }
 
     /// (internal) Shrinks internal byte buffer to a new size.

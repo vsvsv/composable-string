@@ -308,3 +308,18 @@ test "Str.charCount should return correct string length in unicode scalars" {
     try testing.expectEqual(ru_str.charCount(), 43);
     try testing.expectEqual(ru_str.byteCount(), 79);
 }
+
+test "Str.format should correctly format string when Str used as argument for fmt-like functions" {
+    const a = testing.allocator;
+
+    var str = try Str.init(a, "Hello");
+    defer str.deinit();
+
+    const result = try std.fmt.allocPrint(a, "str = {s}", .{str});
+    defer a.free(result);
+    try testing.expectEqualStrings("str = Hello", result);
+
+    const result2 = try std.fmt.allocPrint(a, "str = {}", .{str});
+    defer a.free(result2);
+    try testing.expectEqualStrings("str = Hello", result2);
+}
