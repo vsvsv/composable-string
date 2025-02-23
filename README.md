@@ -42,18 +42,18 @@ pub fn main() !void {
     var another = try Str.initFmt(a, " (this is {s} {s})", .{"concatinated", "Str"});
     defer another.deinit();
     try str.concat(another);
-    std.debug.print("'str' is: \"{s}\"\n", .{str.asSlice()});
+    std.debug.print("str = {}\n", .{str});
 
     var str_with_spaces = try Str.initFmt(a, "        A string with {s} \t\n\t\n  ", .{"whitespaces, newlines and tabs"});
     defer str_with_spaces.deinit();
     str_with_spaces.trim();
-    std.debug.print("'str_with_spaces' after trim(): \"{s}\"\n", .{str_with_spaces.asSlice()});
+    std.debug.print("'str_with_spaces' after trim(): \"{s}\"\n", .{str_with_spaces});
 
     var non_ascii = try Str.init(a, "Один, 二, さん"); // character count: 11
     defer non_ascii.deinit();
     std.debug.print(
-        "Non-ascii string: \"{s}\", length in bytes: {}, length in characters: {}\n",
-        .{ non_ascii.asSlice(), non_ascii.byteCount(), non_ascii.charCount() },
+        "Non-ascii string: \"{}\", length in bytes: {}, length in characters: {}\n",
+        .{ non_ascii, non_ascii.byteCount(), non_ascii.charCount() },
     );
 }
 ```
@@ -69,6 +69,7 @@ pub fn main() !void {
 - [x] ```Str.clear```
 - [x] ```Str.clone```
 - [x] ```Str.concat```
+- [x] ```Str.concatFmt```
 - [x] ```Str.trim```
 - [x] ```Str.trimStart```
 - [x] ```Str.trimEnd```
@@ -77,6 +78,8 @@ pub fn main() !void {
 - [x] ```Str.charCount```
 - [x] ```Str.isValidUTF8```
 - [x] ```Str.iterator```
+- [x] ```Str.writer```
+- [x] ```Str.fixedWriter```
 - [ ] ```Str.toUpperCase```
 - [ ] ```Str.toLowerCase```
 - [ ] ```Str.capitalize```

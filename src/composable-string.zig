@@ -49,6 +49,10 @@ pub const Str = struct {
         /// Indicates that input parameter is of incorrect type
         /// and cannot be trivially converted to `Str`.
         IncorrectParameterType,
+
+        /// Indicates that underlying allocator was unable to allocate more memory.
+        /// Same as `std.mem.Allocator.Error`
+        OutOfMemory,
     };
 
     /// A buffer which contains the bytes of UTF-8 encoded text.
@@ -107,6 +111,13 @@ pub const Str = struct {
         return self.buf.capacity;
     }
 
+    /// Modify `Str` underlying buffer so that it can hold at least `new_capacity` bytes.
+    pub inline fn ensureTotalCapacity(self: *Self, new_capacity_bytes: usize) Str.Error!void {
+        self.buf.ensureTotalCapacity(self.allocator, new_capacity_bytes) catch {
+            return Str.Error.OutOfMemory;
+        };
+    }
+
     /// Sets the content of this string by copying data from `new_content`.
     /// Parameter `new_content` can be `Str`, `u8` slice or `u8` literal.
     ///
@@ -135,6 +146,12 @@ pub const Str = struct {
         self.buf.clearAndFree(self.allocator);
     }
 
+    /// Truncates this string, removing all the contents, but keeping the capacity.
+    /// Underlying buffer size keeps untouched.
+    pub inline fn clearRetainingCapacity(self: *Self) void {
+        self.buf.clearRetainingCapacity();
+    }
+
     /// Free underlying buffer and release all allocated memory
     pub inline fn deinit(self: *Self) void {
         self.buf.deinit(self.allocator);
@@ -160,8 +177,32 @@ pub const Str = struct {
         try self.buf.appendSlice(self.allocator, append_buf);
     }
 
+    /// Appends formatted string to the end this `Str`.
+    /// See ```std.fmt.format()``` for an explanation of `fmt` string format.
+    pub fn concatFmt(self: *Self, comptime fmt: []const u8, args: anytype) !void {
+        const original_len = self.byteCount();
+        const original_capacity = self.capacity();
+
+        const char_count = std.fmt.count(fmt, args);
+        self.buf.ensureUnusedCapacity(self.allocator, char_count) catch {
+            return Str.Error.OutOfMemory;
+        };
+
+        const new_allocated_slice = self.buf.allocatedSlice();
+        const buf_u8 = new_allocated_slice[original_len..(original_len + char_count)];
+        _ = try std.fmt.bufPrint(buf_u8, fmt, args);
+
+        Self.checkValidUTF8(buf_u8) catch |err| {
+            self.buf.items = new_allocated_slice[0..original_len];
+            self.buf.shrinkAndFree(self.allocator, original_capacity);
+            return err;
+        };
+
+        self.buf.items = new_allocated_slice[0..(original_len + char_count)];
+    }
+
     /// Checks if string data has valid UTF-8 encoding
-    inline fn checkValidUTF8(str: anytype) !void {
+    inline fn checkValidUTF8(str: anytype) Str.Error!void {
         const slice = StringUtils.getUnderlyingU8Slice(str);
         if (!unicode.wtf8ValidateSlice(slice)) {
             return Str.Error.InvalidUtf8;
@@ -331,11 +372,48 @@ pub const Str = struct {
     /// const str = try Str.init(a, "Hello");
     /// std.debug.print("str = {s}", .{ str }); // Expected output: "str = Hello"
     /// ```
-    pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, fmt_writer: anytype) !void {
         _ = fmt;
         _ = options;
 
-        try writer.print("{s}", .{self.buf.items});
+        try fmt_writer.print("{s}", .{self.buf.items});
+    }
+
+    pub const Writer = std.io.Writer(*Self, Str.Error, appendWrite);
+
+    /// Initializes a Writer which will append to this `Str`.
+    pub fn writer(self: *Self) Writer {
+        return .{ .context = self };
+    }
+
+    /// The purpose of this function existing is to match `std.io.Writer` API.
+    /// Contents of the `m` buffer should be valid UTF-8 data.
+    fn appendWrite(self: *Self, m: []const u8) Str.Error!usize {
+        try Self.checkValidUTF8(m);
+        self.buf.appendSlice(self.allocator, m) catch {
+            return Str.Error.OutOfMemory;
+        };
+        return m.len;
+    }
+
+    pub const FixedWriter = std.io.Writer(*Self, Str.Error, appendWriteFixed);
+
+    /// Initializes a Writer which will append to this `Str` but will return
+    /// `error.OutOfMemory` rather than increasing capacity of th `Str`.
+    pub fn fixedWriter(self: *Self) FixedWriter {
+        return .{ .context = self };
+    }
+
+    /// The purpose of this function existing is to match `std.io.Writer` API.
+    /// Contents of the `m` buffer should be valid UTF-8 data.
+    fn appendWriteFixed(self: *Self, m: []const u8) Str.Error!usize {
+        const available_capacity = self.capacity() - self.byteCount();
+        if (m.len > available_capacity)
+            return Str.Error.OutOfMemory;
+
+        try Self.checkValidUTF8(m);
+        self.buf.appendSliceAssumeCapacity(m);
+        return m.len;
     }
 
     /// (internal) Shrinks internal byte buffer to a new size.
