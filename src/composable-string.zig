@@ -558,6 +558,77 @@ const StringUtils = struct {
 
 /// Various utility functions for UTF-8 codepoints
 pub const Codepoint = struct {
+    /// Functions for working with ASCII codepoints
+    pub const Ascii = struct {
+        /// If the bit selected by this mask is set, ascii is lower case.
+        pub const ASCII_CASE_MASK: u8 = 0b0010_0000;
+
+        inline fn checkAppropriateType(char: anytype) void {
+            const t = @typeInfo(@TypeOf(char));
+            if (comptime !(t == .comptime_int or t == .int)) {
+                const error_msg = std.fmt.comptimePrint(
+                    "Codepoint with incorrect type given. Expected integer, got: {s}\n",
+                    .{@typeName(@TypeOf(char))},
+                );
+                @compileError(error_msg);
+            }
+        }
+
+        /// Checks if given codepoint is in ASCII range
+        pub inline fn isAscii(char: anytype) bool {
+            checkAppropriateType(char);
+            return char < 127;
+        }
+
+        pub inline fn isAsciiUppercase(char: anytype) bool {
+            checkAppropriateType(char);
+            return char >= 'A' and char <= 'Z';
+        }
+
+        pub inline fn isAsciiLowercase(char: anytype) bool {
+            checkAppropriateType(char);
+            return char >= 'a' and char <= 'z';
+        }
+
+        pub inline fn isAsciiDigit(char: anytype) bool {
+            checkAppropriateType(char);
+            return char >= '0' and char <= '9';
+        }
+
+        pub inline fn isAsciiAlphabetic(char: anytype) bool {
+            checkAppropriateType(char);
+            return isAsciiUppercase(char) or isAsciiLowercase(char);
+        }
+
+        pub inline fn isAsciiAlphanumeric(char: anytype) bool {
+            checkAppropriateType(char);
+            return isAsciiDigit(char) or isAsciiAlphabetic(char);
+        }
+
+        pub inline fn isAsciiWhitespace(char: anytype) bool {
+            checkAppropriateType(char);
+            return char == '\t' or char == '\n' or char == '\x0C' or char == '\r' or char == ' ';
+        }
+
+        pub inline fn toAsciiLowercase(char: anytype) @TypeOf(char) {
+            checkAppropriateType(char);
+            const mask: @TypeOf(char) = @intCast(ASCII_CASE_MASK);
+            return char | @as(@TypeOf(char), @intCast(@intFromBool(isAsciiUppercase(char)))) * mask;
+        }
+
+        pub inline fn toAsciiUppercase(char: anytype) @TypeOf(char) {
+            checkAppropriateType(char);
+            const mask: @TypeOf(char) = @intCast(ASCII_CASE_MASK);
+            return char ^ @as(@TypeOf(char), @intCast(@intFromBool(isAsciiLowercase(char)))) * mask;
+        }
+
+        pub inline fn changeAsciiCaseUnchecked(char: anytype) @TypeOf(char) {
+            checkAppropriateType(char);
+            const mask: @TypeOf(char) = @intCast(ASCII_CASE_MASK);
+            return char ^ mask;
+        }
+    };
+
     /// Checks if given UTF-8 codepoint is a whitespace or a line terminator
     /// (according to `https://developer.mozilla.org/en-US/docs/Glossary/Whitespace#in_javascript`)
     pub fn isWhitespaceOrLineTerminator(char: u21) bool {
@@ -643,3 +714,7 @@ pub const Codepoint = struct {
         return unicode.wtf8Decode(utf8char);
     }
 };
+
+test "Codepoint struct tests" {
+    _ = @import("tests/codepoint.test.zig");
+}
