@@ -532,6 +532,7 @@ const StringUtils = struct {
         }
         return false;
     }
+
     pub fn ensureTypeIsStringLike(str_type: type) void {
         if (checkTypeIsStringLike(str_type)) {
             return;
@@ -542,6 +543,7 @@ const StringUtils = struct {
         );
         @compileError(error_msg);
     }
+
     pub fn getUnderlyingU8Slice(str: anytype) []const u8 {
         const StrType = @TypeOf(str);
         comptime {

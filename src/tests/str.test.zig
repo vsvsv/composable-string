@@ -92,4 +92,13 @@ test "Str.charCount should return correct string length in unicode scalars" {
     defer ru_str.deinit();
     try testing.expectEqual(ru_str.charCount(), 43);
     try testing.expectEqual(ru_str.byteCount(), 79);
+
+    // // `charCount()` cannot count grapheme clusters due to computational complexity,
+    // // so this test will definitely fail. This is common behavior in other languages (i. e. Rust).
+    // // Should we need a separate more advanced counting function?
+    //
+    // var zalgo_str = try Str.init(a, common.zalgo_text); // 23 characters, 334 bytes
+    // defer zalgo_str.deinit();
+    // try testing.expectEqual(zalgo_str.charCount(), 23);
+    // try testing.expectEqual(zalgo_str.byteCount(), 334);
 }
