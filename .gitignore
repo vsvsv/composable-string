@@ -5,6 +5,9 @@ build/
 build-*/
 docgen_tmp/
 
+# Downloaded UCD files
+src/tools/gen-tables/downloaded
+
 # Debug files
 *.dSYM/
 *.su

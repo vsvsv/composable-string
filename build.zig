@@ -8,6 +8,8 @@ pub fn build(b: *std.Build) void {
     const build_options = b.addOptions();
     build_options.addOption(std.SemanticVersion, "lib_version", lib_version);
 
+    //--- Static library
+
     const lib = b.addStaticLibrary(.{
         .name = "composable-string",
         .root_module = b.createModule(.{
@@ -16,29 +18,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-
     b.installArtifact(lib);
-
-    const exe = b.addExecutable(.{
-        .name = "composable-string",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    exe.root_module.addOptions("build_options", build_options);
-
-    b.installArtifact(exe);
-
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
 
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/composable-string.zig"),
@@ -48,6 +28,29 @@ pub fn build(b: *std.Build) void {
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
+    //--- Executable from src/main.zig
+
+    const mainExe = b.addExecutable(.{
+        .name = "composable-string",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    mainExe.root_module.addOptions("build_options", build_options);
+
+    b.installArtifact(mainExe);
+
+    const run_main_exe_cmd = b.addRunArtifact(mainExe);
+    run_main_exe_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_main_exe_cmd.addArgs(args);
+    }
+
+    const run_main_exe_step = b.step("run", "Run the app");
+    run_main_exe_step.dependOn(&run_main_exe_cmd.step);
+
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -56,11 +59,38 @@ pub fn build(b: *std.Build) void {
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
+    //--- Executable from src/tools/gen-tables/main.zig
+
+    const gen_unicode_tables_exe = b.addExecutable(.{
+        .name = "gen-tables",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tools/gen-tables/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    gen_unicode_tables_exe.root_module.addOptions("build_options", build_options);
+    gen_unicode_tables_exe.root_module.addImport("composable-string", lib.root_module);
+
+    b.installArtifact(gen_unicode_tables_exe);
+
+    const run_gen_tables_cmd = b.addRunArtifact(gen_unicode_tables_exe);
+    run_gen_tables_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_gen_tables_cmd.addArgs(args);
+    }
+
+    const run_gen_tables_step = b.step("gen-tables", "Generate unicode tables from UCD database");
+    run_gen_tables_step.dependOn(&run_gen_tables_cmd.step);
+
+    //--- Run tests step
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 
-    // Setup documentation generation
+    //--- Setup documentation generation
+
     const docs_step = b.step("docs", "Emit docs");
 
     const docs_install = b.addInstallDirectory(.{
