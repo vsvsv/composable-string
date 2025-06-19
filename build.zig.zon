@@ -1,5 +1,6 @@
 .{
-    .name = "composable-string",
+    .name = .composable_string,
+    .fingerprint = 0xecc604c1f15f2674,
     .version = "0.1.0",
     .dependencies = .{},
     .paths = .{

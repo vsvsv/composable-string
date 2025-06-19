@@ -98,20 +98,25 @@ test "Str implements FixedWriter" {
 
     {
         var str = Str.initEmpty(a);
-        try str.ensureTotalCapacity(8);
+        try testing.expectEqual(0, str.capacity());
+
+        const REPEAT_TIMES = 1024;
+        try str.ensureTotalCapacity(8 * REPEAT_TIMES);
+        try testing.expect(str.capacity() >= 8 * REPEAT_TIMES);
         defer str.deinit();
 
         const string_8_bytes = "12345678";
 
-        try str.fixedWriter().writeAll(string_8_bytes);
-        try testing.expectError(Str.Error.OutOfMemory, str.fixedWriter().writeAll("9"));
+        try str.fixedWriter().writeAll(string_8_bytes ** REPEAT_TIMES);
+        try testing.expectEqualSlices(u8, str.asSlice(), string_8_bytes ** REPEAT_TIMES);
     }
     {
+        const REPEAT_TIMES = 1024;
         var str = Str.initEmpty(a);
-        try str.ensureTotalCapacity(14);
+        try str.ensureTotalCapacity(14 * REPEAT_TIMES);
         defer str.deinit();
 
-        {
+        for (0..REPEAT_TIMES) |_| {
             var part_1 = try Str.init(a, "this");
             defer part_1.deinit();
 
@@ -128,8 +133,7 @@ test "Str implements FixedWriter" {
             try fixedWriter.print("{} {} {} {}", .{ part_1, part_2, part_3, part_4 });
         }
 
-        try testing.expectEqualSlices(u8, str.asSlice(), "this is a test");
-        try testing.expectError(Str.Error.OutOfMemory, str.fixedWriter().writeAll("no more fits"));
+        try testing.expectEqualSlices(u8, str.asSlice(), "this is a test" ** REPEAT_TIMES);
     }
 }
 

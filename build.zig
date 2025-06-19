@@ -142,17 +142,17 @@ fn getLibraryBuildVersion(b: *std.Build) !std.SemanticVersion {
         git_hash_command.stderr_behavior = .Pipe;
         try git_hash_command.spawn();
 
-        var cmd_stdout = std.ArrayList(u8).init(b.allocator);
-        var cmd_stderr = std.ArrayList(u8).init(b.allocator);
-        try git_hash_command.collectOutput(&cmd_stdout, &cmd_stderr, 1024);
+        var cmd_stdout: std.ArrayListUnmanaged(u8) = .empty;
+        var cmd_stderr: std.ArrayListUnmanaged(u8) = .empty;
+        try git_hash_command.collectOutput(b.allocator, &cmd_stdout, &cmd_stderr, 1024);
 
         _ = try git_hash_command.wait();
 
         const stdout_str = try std.fmt.bufPrint(&git_hash_str_buf, "{s}", .{cmd_stdout.items});
         const git_hash_str = std.mem.trim(u8, stdout_str, " \n");
 
-        cmd_stderr.deinit();
-        cmd_stdout.deinit();
+        cmd_stderr.deinit(b.allocator);
+        cmd_stdout.deinit(b.allocator);
 
         break :blk git_hash_str;
     };

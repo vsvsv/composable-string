@@ -98,7 +98,7 @@ pub const Str = struct {
 
     /// Initializes a new string with an empty buffer.
     pub fn initEmpty(allocator: std.mem.Allocator) Self {
-        const buf = ArrayListUnmanaged(u8).empty;
+        const buf: ArrayListUnmanaged(u8) = .empty;
         return Self{
             .buf = buf,
             .allocator = allocator,
@@ -577,22 +577,31 @@ pub const Codepoint = struct {
         /// Checks if given codepoint is in ASCII range
         pub inline fn isAscii(char: anytype) bool {
             checkAppropriateType(char);
-            return char < 127;
+            return char <= 127;
         }
 
         pub inline fn isAsciiUppercase(char: anytype) bool {
             checkAppropriateType(char);
-            return char >= 'A' and char <= 'Z';
+            return switch (char) {
+                'A'...'Z' => true,
+                else => false,
+            };
         }
 
         pub inline fn isAsciiLowercase(char: anytype) bool {
             checkAppropriateType(char);
-            return char >= 'a' and char <= 'z';
+            return switch (char) {
+                'a'...'z' => true,
+                else => false,
+            };
         }
 
         pub inline fn isAsciiDigit(char: anytype) bool {
             checkAppropriateType(char);
-            return char >= '0' and char <= '9';
+            return switch (char) {
+                '0'...'9' => true,
+                else => false,
+            };
         }
 
         pub inline fn isAsciiAlphabetic(char: anytype) bool {
